@@ -1,7 +1,10 @@
 Ext.define('MilestoneApp', {
     extend: 'Rally.app.App',
     componentCls: 'app',
-    
+    items: [
+      {xtype:'container', itemId: 'display_box'}
+    ],
+
     config: {
         defaultSettings: {
           query: ''
@@ -178,6 +181,10 @@ Ext.define('MilestoneApp', {
 
     _onStoreBuilt: function(modelName, store) {
      
+        if (this.down('#display_box')) {
+          this.down('#display_box').removeAll();
+        }
+        
         var modelNames = [modelName],
             context = this.getContext();
       
@@ -185,7 +192,8 @@ Ext.define('MilestoneApp', {
         store.model.addField({name: "TargetDate"});
         store.model.addField({name: "DaysLate"});
       
-        this.gridBoard = this.add({
+//        this.gridBoard = this.add({
+          this.gridBoard = this.down('#display_box').add({
             xtype: 'rallygridboard',
             context: context,
             modelNames: modelNames,
