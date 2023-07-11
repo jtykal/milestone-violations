@@ -2,76 +2,124 @@ Ext.define('MilestoneApp', {
     extend: 'Rally.app.App',
     componentCls: 'app',
     
+    config: {
+        defaultSettings: {
+          query: ''
+        }
+    },
+
     launch: function() {
       this._loadMilestones();
-      this._loadPortfolioItemTypes();
-      window.mapp = this;
+//      this._loadPortfolioItemTypes();
+      this._loadPortfolioItems();
+      window.map = this;
     },
-   _loadMilestones: function() {
+
+    _loadMilestones: function() {
         Ext.create('Rally.data.WsapiDataStore', {
-              autoLoad : true,
-              limit : "Infinity",
-              model : "Milestone",
-              fetch : ["Name", "TargetDate"],
-              listeners : {
-                  scope : this,
-                  load : function(store, data) {
-                      this.milestones = store;
-                      if(this.pfstore) this._onDataReady();
-                  }
-              }
-          });
+            autoLoad : true,
+            limit : "Infinity",
+            model : "Milestone",
+            fetch : ["Name", "TargetDate"],
+            listeners : {
+                scope : this,
+                load : function(store, data) {
+                    this.milestones = store;
+                    if(this.pfstore) this._onDataReady();
+                }
+            }
+        });
     },
-    _loadPortfolioItemTypes: function() {
+
+//    _loadPortfolioItemTypes: function() {
       //Usually PortfolioItem/Feature, but the name
       //could be changed in workspace so we need to 
       //dynamically determine lowest level
-      
-       var self = this;
-       Ext.create('Rally.data.wsapi.Store', {
-        model: 'TypeDefinition',
-        autoLoad:true,
-        filters: [{
-          property: "TypePath",
-          operator: "contains",
-          value: "PortfolioItem/"
-        }],
-        listeners: {
-            load: function(store, data, success) { 
-              self._loadPortfolioItems(data[0].data.TypePath);
-            }
-        }
-      });
+//       var self = this;
+//       Ext.create('Rally.data.wsapi.Store', {
+//        model: 'TypeDefinition',
+//        autoLoad:true,
+//        filters: [{
+//            property: "TypePath",
+//            operator: "contains",
+//            value: "PortfolioItem/"
+//        }],
+//        listeners: {
+//            load: function(store, data, success) { 
+//              self._loadPortfolioItems(data[0].data.TypePath);
+//            }
+//        }
+//      });
+//    },
+
+    onTimeboxScopeChange: function(newTimeboxScope) {
+      console.log('timebox scope changed - do a refresh');
+      this.callParent(arguments);
+      // DO SOMETHING HERE TO CLEAR PREVIOUS LIST!
+      this._loadPortfolioItems("PortfolioItem/Feature");
     },
-    _loadPortfolioItems: function(typePath) {  
-      
-        Ext.create('Rally.data.wsapi.TreeStoreBuilder').build({
-            models: [typePath],
+
+    _getFilters: function() {
+      var filter = Ext.create('Rally.data.wsapi.Filter', {
+        property: 'Milestones.ObjectID',
+        operator: "!=",
+        value: null
+      });
+
+      var timeboxScope = this.getContext().getTimeboxScope();
+      //if (timeboxScope && timeboxScope.isApplicable(this.model)) {
+      //if (timeboxScope && _.any(this.models, timeboxScope.isApplicable, timeboxScope)) {
+      if (timeboxScope) {
+
+        console.log('timeboxScope is: ', timeboxScope);
+
+        if (timeboxScope.getType() == "milestone") {
+          console.log('milestone name is: ', timeboxScope.getInitialConfig().record.data.Name);
+          var timebox_filter = Ext.create('Rally.data.wsapi.Filter', {
+            property: 'Milestones.Name',
+            operator: "=",
+            value: timeboxScope.getInitialConfig().record.data.Name
+          });
+          console.log('timebox_filter is: ',timebox_filter, timebox_filter.toString());
+          filter = filter.and(timebox_filter);
+        }
+      }
+
+      if (this.getSetting('query')) {
+        var querySetting = this.getSetting('query').replace(/\{user\}/g, this.getContext().getUser()._ref);
+        var query_filter = Rally.data.QueryFilter.fromQueryString(querySetting);
+        filter = filter.and(query_filter);
+      }
+
+      console.log('filter is: ', filter, filter.toString());
+      return filter;
+    },
+
+    _loadPortfolioItems: function() {
+      Ext.create('Rally.data.wsapi.TreeStoreBuilder').build({
+            models: ["PortfolioItem/Feature"],
             autoLoad: true,  
             enableHierarchy: false,
             context: null,
             sortOnLoad: false,
-            filters: [
-            {
-              property: 'Milestones.ObjectID',
-              operator: "!=",
-              value: null
-            }],
+            filters: this._getFilters(),
             listeners: {
                 load: this._onDataLoaded,
                 scope: this
             }
         }).then({
-            success: this._onStoreBuilt.bind(this, typePath),
+            success: this._onStoreBuilt.bind(this, "PortfolioItem/Feature"),
             scope: this
         });
     },
+
     _onDataLoaded: function(store, node, data) {
       this.pfstore = store;
       if(this.milestones) this._onDataReady();
       
                     
     },
+
     _onDataReady: function() {
       var self = this;
       //window.pfstore = this.pfstore;
@@ -93,16 +141,23 @@ Ext.define('MilestoneApp', {
           record.set("TargetDate", targetDateString);
 
           var daysLate = moment(plannedEndDate).diff(moment(targetDate), 'days') + 1;
+
+          //show all of the values -- if not late, it will be a negative number. useful for sorting
+          if(plannedEndDateString == targetDateString) {
+            daysLate = 0;
+          }
+          record.set("DaysLate", daysLate);
+
           //TODO: plannedEndDate is just before midnight and results in 
           // daysLate 1 if plannedDate and targetDate are the same.  
           // as workaround just check for that condition explicitly
-          if( daysLate > 0 && plannedEndDateString != targetDateString) {
-            record.set("DaysLate", daysLate);
-          } else {
+          //if( daysLate > 0 && plannedEndDateString != targetDateString) {
+          //  record.set("DaysLate", daysLate);
+          //} else {
             // record.remove() will flag record as removed and delete on server
             // when any other change is made. 
             //pfstore.tree.root.childNodes = _.remove(pfstore.tree.root.childNodes, record);
-          }
+          //}
         }
         
       });
@@ -120,6 +175,7 @@ Ext.define('MilestoneApp', {
       });
       return _.first(sorted);
     },
+
     _onStoreBuilt: function(modelName, store) {
      
         var modelNames = [modelName],
@@ -146,8 +202,14 @@ Ext.define('MilestoneApp', {
 //            ],
             gridConfig: {
                 store: store,
+                /* START ADD */
+                //storeConfig: {
+                //  filters: this._getFilters()
+                //},
+                /* END */
                 expandAllInColumnHeaderEnabled: true,
                 columnCfgs: [
+                    'FormattedID',
                     'Name',
                     'Project',
                     'Parent',
@@ -155,7 +217,7 @@ Ext.define('MilestoneApp', {
                     'PlannedEndDate',
                     'Milestones',
                     {
-                      text: 'First Target Date',
+                      text: 'Earliest Target Date',
                       dataIndex: 'TargetDate'
                     },
                     {
@@ -180,6 +242,14 @@ Ext.define('MilestoneApp', {
             height: this.getHeight()
           
         });
+    },
+
+    getSettingsFields: function(){
+      return [
+        {
+          type: 'query'
+        }
+      ];
     }
   
 });
