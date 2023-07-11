@@ -8,4 +8,4 @@ App-local.html
 .idea
 .c9revisions
 node_modules
-deploy/
+auth.json
