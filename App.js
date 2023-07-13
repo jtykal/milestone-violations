@@ -13,9 +13,8 @@ Ext.define('MilestoneApp', {
 
     launch: function() {
       this._loadMilestones();
-//      this._loadPortfolioItemTypes();
       this._loadPortfolioItems();
-      window.map = this;
+//      window.map = this;
     },
 
     _loadMilestones: function() {
@@ -56,10 +55,8 @@ Ext.define('MilestoneApp', {
 //    },
 
     onTimeboxScopeChange: function(newTimeboxScope) {
-      console.log('timebox scope changed - do a refresh');
       this.callParent(arguments);
-      // DO SOMETHING HERE TO CLEAR PREVIOUS LIST!
-      this._loadPortfolioItems("PortfolioItem/Feature");
+      this.launch();
     },
 
     _getFilters: function() {
@@ -70,31 +67,30 @@ Ext.define('MilestoneApp', {
       });
 
       var timeboxScope = this.getContext().getTimeboxScope();
-      //if (timeboxScope && timeboxScope.isApplicable(this.model)) {
-      //if (timeboxScope && _.any(this.models, timeboxScope.isApplicable, timeboxScope)) {
       if (timeboxScope) {
-
-        console.log('timeboxScope is: ', timeboxScope);
-
-        if (timeboxScope.getType() == "milestone") {
-          console.log('milestone name is: ', timeboxScope.getInitialConfig().record.data.Name);
-          var timebox_filter = Ext.create('Rally.data.wsapi.Filter', {
-            property: 'Milestones.Name',
-            operator: "=",
-            value: timeboxScope.getInitialConfig().record.data.Name
-          });
-          console.log('timebox_filter is: ',timebox_filter, timebox_filter.toString());
-          filter = filter.and(timebox_filter);
+        if (timeboxScope.getType().toLowerCase() === "milestone") {
+          var timebox = timeboxScope.getRecord();
+          if (timebox) {
+            //console.log('milestone is: ', timebox);
+            var timebox_filter = Ext.create('Rally.data.wsapi.Filter', {
+              property: 'Milestones.Name',
+              operator: "=",
+              value: timebox.data.Name
+            });
+            //console.log('timebox_filter is: ',timebox_filter, timebox_filter.toString());
+            filter = filter.and(timebox_filter);
+          }
         }
       }
 
       if (this.getSetting('query')) {
         var querySetting = this.getSetting('query').replace(/\{user\}/g, this.getContext().getUser()._ref);
         var query_filter = Rally.data.QueryFilter.fromQueryString(querySetting);
+        //console.log('query filter is: ', query_filter, query_filter.toString());
         filter = filter.and(query_filter);
       }
 
-      console.log('filter is: ', filter, filter.toString());
+      //console.log('_getFilters() returns: ', filter, filter.toString());
       return filter;
     },
 
@@ -119,8 +115,6 @@ Ext.define('MilestoneApp', {
     _onDataLoaded: function(store, node, data) {
       this.pfstore = store;
       if(this.milestones) this._onDataReady();
-      
-                    
     },
 
     _onDataReady: function() {
@@ -132,12 +126,17 @@ Ext.define('MilestoneApp', {
         record.self.addField('TargetDate');
 
         var milestone = self._findFirstMilestone(record.get("Milestones"));
-        if(milestone) {
 
+        // If page uses a milestone filter, then use that Milestone to define Target Date.
+        var timeboxScope = self.getContext().getTimeboxScope();
+        if (timeboxScope && (timeboxScope.getType().toLowerCase() === "milestone") && timeboxScope.getRecord()) {
+          //console.log('timeboxScope is: ', timeboxScope);
+          milestone = timeboxScope.getRecord();
+        }
+
+        if (milestone) {
           var plannedEndDate = record.get("PlannedEndDate");
-          var targetDate = milestone.get("TargetDate");
-          // TODO: Date format can be changed in workspace settings 
-          // should use same format
+          var targetDate = milestone.data.TargetDate;
           var targetDateString = moment(targetDate).format("YYYY-MM-DD");
           var plannedEndDateString = moment(plannedEndDate).format("YYYY-MM-DD");
           record.set("Milestone", milestone.data.Name);
@@ -149,20 +148,11 @@ Ext.define('MilestoneApp', {
           if(plannedEndDateString == targetDateString) {
             daysLate = 0;
           }
-          record.set("DaysLate", daysLate);
-
-          //TODO: plannedEndDate is just before midnight and results in 
-          // daysLate 1 if plannedDate and targetDate are the same.  
-          // as workaround just check for that condition explicitly
-          //if( daysLate > 0 && plannedEndDateString != targetDateString) {
-          //  record.set("DaysLate", daysLate);
-          //} else {
-            // record.remove() will flag record as removed and delete on server
-            // when any other change is made. 
-            //pfstore.tree.root.childNodes = _.remove(pfstore.tree.root.childNodes, record);
+          //if (daysLate < 0){
+          //  daysLate = "ON TIME";  // SCREWS UP THE SORTING
           //}
+          record.set("DaysLate", daysLate);
         }
-        
       });
       this.pfstore.sort({property: "DaysLate", direction: "DESC"});
     },
@@ -184,7 +174,7 @@ Ext.define('MilestoneApp', {
         if (this.down('#display_box')) {
           this.down('#display_box').removeAll();
         }
-        
+
         var modelNames = [modelName],
             context = this.getContext();
       
@@ -192,7 +182,6 @@ Ext.define('MilestoneApp', {
         store.model.addField({name: "TargetDate"});
         store.model.addField({name: "DaysLate"});
       
-//        this.gridBoard = this.add({
           this.gridBoard = this.down('#display_box').add({
             xtype: 'rallygridboard',
             context: context,
@@ -210,11 +199,6 @@ Ext.define('MilestoneApp', {
 //            ],
             gridConfig: {
                 store: store,
-                /* START ADD */
-                //storeConfig: {
-                //  filters: this._getFilters()
-                //},
-                /* END */
                 expandAllInColumnHeaderEnabled: true,
                 columnCfgs: [
                     'FormattedID',
@@ -225,7 +209,7 @@ Ext.define('MilestoneApp', {
                     'PlannedEndDate',
                     'Milestones',
                     {
-                      text: 'Earliest Target Date',
+                      text: 'Milestone Target Date',
                       dataIndex: 'TargetDate'
                     },
                     {
@@ -258,6 +242,11 @@ Ext.define('MilestoneApp', {
           type: 'query'
         }
       ];
+    },
+
+    onSettingsUpdate: function(settings) {
+      this.callParent(arguments);
+      this.launch();
     }
   
 });
