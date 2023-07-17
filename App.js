@@ -200,12 +200,15 @@ Ext.define('MilestoneApp', {
             gridConfig: {
                 store: store,
                 expandAllInColumnHeaderEnabled: true,
+                enableEditing: false,  //20230717
                 columnCfgs: [
                     'FormattedID',
                     'Name',
                     'Project',
                     'Parent',
                     'Owner',
+                    'c_RAG',  //20230717
+                    'Tags',  //20230717
                     'PlannedEndDate',
                     'Milestones',
                     {
